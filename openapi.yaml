@@ -1,0 +1,1551 @@
+openapi: 3.0.3
+info:
+  title: Forbidden Finance Public API
+  version: "1.0.0"
+  description: >-
+    Premium-only public developer read API for Forbidden Finance. Every response
+    is wrapped in the standard Envelope (data + pagination + redacted_fields +
+    filtered). Errors are RFC 9457 problem+json documents. All monetary amounts
+    are exact decimal strings, never floats. Timestamps are RFC 3339 (UTC).
+    Authenticate with an opaque ff_ credential (Bearer or X-API-Key). This spec
+    describes the surface mounted at /v1; the spec document itself
+    (/v1/openapi.json) is intentionally not listed here.
+servers:
+  - url: https://api.403fin.io
+security:
+  - bearerAuth: []
+  - apiKey: []
+tags:
+  - name: accounts
+  - name: transactions
+  - name: budgets
+  - name: goals
+  - name: assets
+  - name: insights
+paths:
+  /v1/accounts:
+    get:
+      tags: [accounts]
+      operationId: listAccounts
+      summary: List accounts
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: connection_id
+          in: query
+          required: false
+          description: Filter to accounts under a single bank connection.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of accounts.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/accounts/{id}:
+    get:
+      tags: [accounts]
+      operationId: getAccount
+      summary: Get one account
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: A single account.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Account' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/accounts/{id}/balances:
+    get:
+      tags: [accounts]
+      operationId: getAccountBalances
+      summary: Get an account balance snapshot
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: The current balance snapshot for the account.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AccountBalance' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/connections:
+    get:
+      tags: [accounts]
+      operationId: listConnections
+      summary: List bank connections
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of bank connections.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/BankConnection' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/sync-status:
+    get:
+      tags: [accounts]
+      operationId: getSyncStatus
+      summary: Aggregate sync health across connections
+      responses:
+        '200':
+          description: The derived sync-status view.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SyncStatus' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/transactions:
+    get:
+      tags: [transactions]
+      operationId: listTransactions
+      summary: List transactions
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: category_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/StartDate'
+        - $ref: '#/components/parameters/EndDate'
+        - name: pending
+          in: query
+          required: false
+          description: When set, filter to pending (true) or posted (false) transactions.
+          schema: { type: boolean }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string, enum: [bank_sync, manual, import] }
+        - name: uncategorized
+          in: query
+          required: false
+          description: When true, return only transactions with no category.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: A page of transactions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Transaction' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/transactions/search:
+    get:
+      tags: [transactions]
+      operationId: searchTransactions
+      summary: Full-text transaction search
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: The search query.
+          schema: { type: string }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/StartDate'
+        - $ref: '#/components/parameters/EndDate'
+      responses:
+        '200':
+          description: A page of matching transactions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Transaction' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/transactions/{id}:
+    get:
+      tags: [transactions]
+      operationId: getTransaction
+      summary: Get one transaction
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: A single transaction.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Transaction' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/categories:
+    get:
+      tags: [transactions]
+      operationId: listCategories
+      summary: List categories
+      responses:
+        '200':
+          description: The category list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Category' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/budgets:
+    get:
+      tags: [budgets]
+      operationId: listBudgets
+      summary: List budgets
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: active
+          in: query
+          required: false
+          description: When true, return only active budgets.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: A page of budgets.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Budget' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/budgets/{id}:
+    get:
+      tags: [budgets]
+      operationId: getBudget
+      summary: Get one budget
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: A single budget.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Budget' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/budgets/{id}/progress:
+    get:
+      tags: [budgets]
+      operationId: getBudgetProgress
+      summary: Get budget spend progress
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - name: month
+          in: query
+          required: false
+          description: The month to report, as YYYY-MM. Defaults to the current month.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The budget progress view.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/BudgetProgress' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/budgets/method-switch:
+    post:
+      tags: [budgets]
+      operationId: switchBudgetMethod
+      summary: Switch the active budget method
+      description: >-
+        Switches the active budget to a different method. This ARCHIVES the
+        current budget and CREATES a new one, so confirm must be literal true
+        (else 400 validation). Requires the budgets:write scope, writes_enabled,
+        and an Idempotency-Key (a double-fired switch would create two budgets).
+        A SHARED budget cannot be switched here — it returns 409
+        (partner-approval-required); that approval flow lives only in the app.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BudgetMethodSwitchRequest' }
+      responses:
+        '200':
+          description: The new budget id, with the previous budget archived.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/BudgetMethodSwitchResult' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/recurring:
+    get:
+      tags: [budgets]
+      operationId: listRecurring
+      summary: List detected recurring rules
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of recurring rules.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/RecurringRule' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/bills/upcoming:
+    get:
+      tags: [budgets]
+      operationId: listUpcomingBills
+      summary: List projected upcoming bills
+      parameters:
+        - name: days_ahead
+          in: query
+          required: false
+          description: How many days ahead to project.
+          schema: { type: integer, format: int32, minimum: 1 }
+      responses:
+        '200':
+          description: The upcoming bills.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/UpcomingBill' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/goals:
+    get:
+      tags: [goals]
+      operationId: listGoals
+      summary: List goals
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of goals.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Goal' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/goals/{id}:
+    get:
+      tags: [goals]
+      operationId: getGoal
+      summary: Get one goal
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: A single goal.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Goal' }
+        default: { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [goals]
+      operationId: updateGoal
+      summary: Update a goal
+      description: >-
+        Updates a goal's mutable fields. Only name, description, target_amount,
+        and target_date may be changed; any other field is a validation error.
+        Requires the goals:write scope and writes_enabled on the connection. A
+        goal linked exclusively to excluded accounts returns 404 (not-found),
+        byte-identical to a nonexistent goal.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalUpdateRequest' }
+      responses:
+        '200':
+          description: The updated goal (redacted per connection scope).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Goal' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/goals/{id}/progress:
+    get:
+      tags: [goals]
+      operationId: getGoalProgress
+      summary: Get goal progress
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: The goal progress view.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/GoalProgress' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/goals/{id}/history:
+    get:
+      tags: [goals]
+      operationId: getGoalHistory
+      summary: Get goal progress history
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - name: start_date
+          in: query
+          required: true
+          description: Inclusive start date (YYYY-MM-DD).
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/EndDate'
+        - name: resolution
+          in: query
+          required: false
+          schema: { type: string, enum: [daily, weekly, monthly] }
+      responses:
+        '200':
+          description: A series of goal snapshots.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/GoalSnapshot' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/goals/{id}/contributions:
+    get:
+      tags: [goals]
+      operationId: getGoalContributions
+      summary: List goal contributions
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of goal contributions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/GoalContribution' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [goals]
+      operationId: recordGoalContribution
+      summary: Record a goal contribution
+      description: >-
+        Records a manual contribution toward a goal. Requires the goals:write
+        scope, writes_enabled, and an Idempotency-Key (a double-fired
+        contribution would otherwise post twice). currency_code defaults to the
+        goal's currency. A goal linked exclusively to excluded accounts returns
+        404, byte-identical to a nonexistent goal.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalContributionRequest' }
+      responses:
+        '200':
+          description: The recorded contribution and the goal's updated progress.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/GoalContributionResult' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/net-worth:
+    get:
+      tags: [assets]
+      operationId: getNetWorth
+      summary: Get the net-worth summary
+      description: >-
+        Unavailable (data-excluded) for connections that exclude accounts: net
+        worth is served from a stored snapshot that cannot be retro-filtered by
+        account. Category exclusions do not affect net worth and are served
+        normally.
+      responses:
+        '200':
+          description: The net-worth summary.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/NetWorth' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/net-worth/history:
+    get:
+      tags: [assets]
+      operationId: getNetWorthHistory
+      summary: Get the net-worth trend
+      description: >-
+        Unavailable (data-excluded) for connections that exclude accounts:
+        historical snapshots cannot be retro-filtered by account.
+      parameters:
+        - name: period
+          in: query
+          required: false
+          description: The look-back period token (for example 30d, 6mo, 1y).
+          schema: { type: string }
+        - name: base_currency
+          in: query
+          required: false
+          description: The ISO 4217 currency the series is converted to.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The net-worth history series.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/NetWorthHistoryPoint' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/holdings:
+    get:
+      tags: [assets]
+      operationId: listHoldings
+      summary: List investment holdings
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of holdings.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Holding' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/liabilities:
+    get:
+      tags: [assets]
+      operationId: listLiabilities
+      summary: List liabilities
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/PageSize'
+        - name: account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: A page of liabilities.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Liability' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/debt/summary:
+    get:
+      tags: [assets]
+      operationId: getDebtSummary
+      summary: Get the debt summary
+      responses:
+        '200':
+          description: The debt summary, grouped by currency.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/DebtSummary' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/debt/payoff-plan:
+    post:
+      tags: [assets]
+      operationId: computeDebtPayoffPlan
+      summary: Compute a debt payoff plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DebtPayoffPlanRequest' }
+      responses:
+        '200':
+          description: The computed payoff plan.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/DebtPayoffPlan' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/insights/spending-by-category:
+    get:
+      tags: [insights]
+      operationId: insightsSpendingByCategory
+      summary: Spending share by category
+      parameters:
+        - $ref: '#/components/parameters/StartDateRequired'
+        - $ref: '#/components/parameters/EndDateRequired'
+      responses:
+        '200':
+          description: Per-category spending shares.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/SpendingByCategoryRow' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/insights/income-vs-expenses:
+    get:
+      tags: [insights]
+      operationId: insightsIncomeVsExpenses
+      summary: Income versus expenses by month
+      parameters:
+        - $ref: '#/components/parameters/StartDateRequired'
+        - $ref: '#/components/parameters/EndDateRequired'
+      responses:
+        '200':
+          description: Monthly income/expense roll-ups.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/IncomeVsExpenses' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/insights/month-summary:
+    get:
+      tags: [insights]
+      operationId: insightsMonthSummary
+      summary: One month's income/expense summary
+      parameters:
+        - name: month
+          in: query
+          required: true
+          description: The month to summarize, as YYYY-MM.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The month summary.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MonthSummary' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/insights/cash-flow-forecast:
+    get:
+      tags: [insights]
+      operationId: insightsCashFlowForecast
+      summary: Cash-flow forecast
+      parameters:
+        - name: days_ahead
+          in: query
+          required: false
+          description: How many days ahead to project.
+          schema: { type: integer, format: int32, minimum: 1 }
+        - name: account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The cash-flow forecast.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CashFlowForecast' }
+        default: { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: An opaque ff_ credential (ff_ak_ / ff_at_) presented as a Bearer token.
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: An opaque ff_ credential presented in the X-API-Key header.
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor from a previous response's pagination.next_cursor.
+      schema: { type: string }
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      description: Maximum number of items to return.
+      schema: { type: integer, format: int32, minimum: 1 }
+    PathID:
+      name: id
+      in: path
+      required: true
+      description: The resource UUID.
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >-
+        A caller-chosen unique key (1-128 chars) that makes the write idempotent.
+        A retry with the SAME key and body replays the original response
+        (Idempotency-Replayed: true); the same key with a DIFFERENT body is a 409
+        conflict; a still-in-flight duplicate is 409 with Retry-After. Required on
+        every write. Stored for 24 hours.
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    StartDate:
+      name: start_date
+      in: query
+      required: false
+      description: Inclusive start date (YYYY-MM-DD).
+      schema: { type: string, format: date }
+    EndDate:
+      name: end_date
+      in: query
+      required: false
+      description: Inclusive end date (YYYY-MM-DD).
+      schema: { type: string, format: date }
+    StartDateRequired:
+      name: start_date
+      in: query
+      required: true
+      description: Inclusive start date (YYYY-MM-DD).
+      schema: { type: string, format: date }
+    EndDateRequired:
+      name: end_date
+      in: query
+      required: true
+      description: Inclusive end date (YYYY-MM-DD).
+      schema: { type: string, format: date }
+  responses:
+    Problem:
+      description: An RFC 9457 problem+json error. See the ProblemType enum for the stable type slugs.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Money:
+      type: object
+      description: An exact monetary amount. amount is a decimal string, never a float.
+      required: [amount, currency]
+      properties:
+        amount: { type: string, description: The decimal amount as a string. }
+        currency: { type: string, description: The ISO 4217 currency code. }
+    Page:
+      type: object
+      description: Cursor pagination state. total_count is intentionally not exposed.
+      properties:
+        next_cursor: { type: string }
+        has_more: { type: boolean }
+    Envelope:
+      type: object
+      description: The standard response wrapper for every /v1 endpoint.
+      required: [data]
+      properties:
+        data:
+          description: The response payload. Its shape depends on the endpoint.
+        pagination:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+          nullable: true
+          description: Cursor pagination state, present on list endpoints.
+        redacted_fields:
+          type: array
+          items: { type: string }
+          description: Field ids stripped from the payload by connection scope.
+        filtered:
+          type: boolean
+          description: True when row or aggregate filtering is in effect for this response.
+    ProblemType:
+      type: string
+      description: The stable, machine-readable problem type slug (the tail of Problem.type).
+      enum:
+        - validation
+        - tier-required
+        - insufficient-scope
+        - writes-disabled
+        - forbidden
+        - not-found
+        - conflict
+        - partner-approval-required
+        - data-excluded
+        - rate-limited
+        - quota-exceeded
+        - range-too-large
+        - unavailable
+        - internal
+        - invalid-credential
+    Problem:
+      type: object
+      description: >-
+        An RFC 9457 problem detail. type is https://api.403fin.io/problems/{slug}
+        where slug is one of the ProblemType values. Extension members are
+        flattened at the top level per RFC 9457 section 3.2. The tier-required
+        problem carries the extensions current_tier, required_tier, and feature.
+      required: [type, title, status]
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+          format: uri
+          description: The problem type URI. Its slug is one of the ProblemType values.
+        title: { type: string }
+        status: { type: integer, format: int32 }
+        detail: { type: string }
+        instance: { type: string }
+        request_id: { type: string }
+        current_tier:
+          type: string
+          description: Extension present on tier-required; the caller's current tier.
+        required_tier:
+          type: string
+          description: Extension present on tier-required; the tier the feature needs.
+        feature:
+          type: string
+          description: Extension present on tier-required; the gated feature key.
+    Account:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        connection_id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string }
+        subtype: { type: string, nullable: true }
+        currency: { type: string }
+        balance: { $ref: '#/components/schemas/Money' }
+        available_balance: { $ref: '#/components/schemas/Money' }
+        mask: { type: string, nullable: true }
+        nickname: { type: string, nullable: true }
+        provider: { type: string }
+        is_hidden: { type: boolean }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    BankConnection:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string }
+        institution: { type: string }
+        institution_logo_url: { type: string }
+        status: { type: string }
+        last_synced_at: { type: string, format: date-time, nullable: true }
+        error_code: { type: string, nullable: true }
+        error_message: { type: string, nullable: true }
+        account_count: { type: integer, format: int32 }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    SyncStatusRow:
+      type: object
+      required: [connection_id, healthy]
+      properties:
+        connection_id: { type: string, format: uuid }
+        institution: { type: string }
+        status: { type: string }
+        last_synced_at: { type: string, format: date-time, nullable: true }
+        healthy: { type: boolean }
+    SyncStatus:
+      type: object
+      required: [connections, all_healthy]
+      properties:
+        connections:
+          type: array
+          items: { $ref: '#/components/schemas/SyncStatusRow' }
+        all_healthy: { type: boolean }
+        oldest_synced_at: { type: string, format: date-time, nullable: true }
+    AccountBalance:
+      type: object
+      required: [account_id]
+      properties:
+        account_id: { type: string, format: uuid }
+        name: { type: string }
+        balance: { $ref: '#/components/schemas/Money' }
+        available_balance: { $ref: '#/components/schemas/Money' }
+        as_of: { type: string, format: date-time, nullable: true }
+    Transaction:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        account_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid, nullable: true }
+        amount: { $ref: '#/components/schemas/Money' }
+        merchant: { type: string }
+        description: { type: string }
+        date: { type: string, format: date }
+        posted_at: { type: string, format: date-time, nullable: true }
+        is_pending: { type: boolean }
+        source: { type: string }
+        payment_channel: { type: string, nullable: true }
+        transfer_pair_id: { type: string, format: uuid, nullable: true }
+        recurring_rule_id: { type: string, format: uuid, nullable: true }
+        external_ref: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        check_number: { type: string, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    Category:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        parent_id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        icon: { type: string }
+        color: { type: string }
+        type_tag: { type: string }
+        is_system: { type: boolean }
+        sort_order: { type: integer, format: int32 }
+    BudgetMethodMeta:
+      type: object
+      properties:
+        display_name: { type: string }
+        is_name_editable: { type: boolean }
+        has_fixed_groups: { type: boolean }
+    BudgetItem:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        allocated_amount: { type: string, description: A decimal amount string. }
+        spent_amount: { type: string, description: A decimal amount string. }
+    TargetGroup:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        sort_order: { type: integer, format: int32 }
+        allocation_type: { type: string }
+        allocation_value: { type: string }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BudgetItem' }
+    Budget:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        method_type: { type: string }
+        period_type: { type: string }
+        is_active: { type: boolean }
+        income_type: { type: string, nullable: true }
+        expected_monthly_income: { type: string, nullable: true }
+        method_meta: { $ref: '#/components/schemas/BudgetMethodMeta' }
+        enabled_features:
+          type: array
+          items: { type: string }
+        target_groups:
+          type: array
+          items: { $ref: '#/components/schemas/TargetGroup' }
+        created_at: { type: string, format: date-time, nullable: true }
+    BudgetAnomaly:
+      type: object
+      required: [transaction_id]
+      properties:
+        transaction_id: { type: string, format: uuid }
+        amount: { type: string, description: A decimal amount string. }
+        transaction_date: { type: string, format: date }
+        status: { type: string }
+        covered_by_goal: { type: string }
+    GroupProgress:
+      type: object
+      required: [group_id]
+      properties:
+        group_id: { type: string, format: uuid }
+        group_name: { type: string }
+        allocated: { type: string, description: A decimal amount string. }
+        spent: { type: string, description: A decimal amount string. }
+        remaining: { type: string, description: A decimal amount string. }
+        spent_percentage: { type: number, format: double }
+        rollover_amount: { type: string, description: A decimal amount string. }
+        upcoming_recurring_total: { type: string, description: A decimal amount string. }
+    BudgetProgress:
+      type: object
+      required: [budget_id]
+      properties:
+        budget_id: { type: string, format: uuid }
+        method_type: { type: string }
+        total_income: { type: string, description: A decimal amount string. }
+        total_allocated: { type: string, description: A decimal amount string. }
+        total_spent: { type: string, description: A decimal amount string. }
+        remaining: { type: string, description: A decimal amount string. }
+        expected_income: { type: string, description: A decimal amount string. }
+        anomaly_total: { type: string, description: A decimal amount string. }
+        method_meta: { $ref: '#/components/schemas/BudgetMethodMeta' }
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/GroupProgress' }
+        anomalies:
+          type: array
+          items: { $ref: '#/components/schemas/BudgetAnomaly' }
+    RecurringRule:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        merchant: { type: string }
+        expected_amount: { type: string, description: A decimal amount string. }
+        currency: { type: string }
+        frequency: { type: string }
+        stream_type: { type: string }
+        confidence: { type: string }
+        next_expected: { type: string, format: date }
+        status: { type: string }
+        source: { type: string }
+        account_id: { type: string, format: uuid, nullable: true }
+        match_count: { type: integer, format: int32 }
+        last_matched_date: { type: string, format: date, nullable: true }
+        logo_url: { type: string }
+        consecutive_missed: { type: integer, format: int32 }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    UpcomingBill:
+      type: object
+      required: [rule_id]
+      properties:
+        rule_id: { type: string, format: uuid }
+        merchant: { type: string }
+        expected_amount: { type: string, description: A decimal amount string. }
+        expected_date: { type: string, format: date }
+        frequency: { type: string }
+        stream_type: { type: string }
+        logo_url: { type: string }
+    GoalAccountLink:
+      type: object
+      required: [account_id]
+      properties:
+        account_id: { type: string, format: uuid }
+        account_type: { type: string }
+        link_role: { type: string }
+    GoalBudgetLink:
+      type: object
+      required: [budget_item_id]
+      properties:
+        budget_item_id: { type: string, format: uuid }
+        contribution_amount: { type: string, description: A decimal amount string. }
+        is_active: { type: boolean }
+    GoalProgress:
+      type: object
+      required: [goal_id]
+      properties:
+        goal_id: { type: string, format: uuid }
+        current_amount: { type: string, description: A decimal amount string. }
+        target_amount: { type: string, description: A decimal amount string. }
+        remaining_amount: { type: string, description: A decimal amount string. }
+        progress_pct: { type: string, description: A decimal percentage string. }
+        days_remaining: { type: integer, format: int32, nullable: true }
+        projected_completion_date: { type: string, format: date, nullable: true }
+        monthly_contribution_needed: { type: string, nullable: true, description: A decimal amount string. }
+        last_contribution_at: { type: string, format: date-time, nullable: true }
+        monthly_shortfall: { type: string, nullable: true, description: A decimal amount string. }
+    Goal:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        goal_type: { type: string }
+        status: { type: string }
+        target_amount: { type: string, description: A decimal amount string. }
+        current_amount: { type: string, description: A decimal amount string. }
+        currency: { type: string }
+        target_date: { type: string, format: date, nullable: true }
+        funding_source_type: { type: string }
+        sort_order: { type: integer, format: int32 }
+        show_in_digest: { type: boolean }
+        account_links:
+          type: array
+          items: { $ref: '#/components/schemas/GoalAccountLink' }
+        budget_links:
+          type: array
+          items: { $ref: '#/components/schemas/GoalBudgetLink' }
+        progress: { $ref: '#/components/schemas/GoalProgress' }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+    GoalContribution:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        goal_id: { type: string, format: uuid }
+        budget_item_id: { type: string, format: uuid, nullable: true }
+        amount: { type: string, description: A decimal amount string. }
+        currency: { type: string }
+        period_start: { type: string, format: date }
+        source: { type: string }
+        note: { type: string, nullable: true }
+        detected_at: { type: string, format: date-time, nullable: true }
+    GoalSnapshot:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        goal_id: { type: string, format: uuid }
+        snapshot_date: { type: string, format: date }
+        current_amount: { type: string, description: A decimal amount string. }
+        target_amount: { type: string, description: A decimal amount string. }
+        progress_pct: { type: string, description: A decimal percentage string. }
+    Holding:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        asset_type: { type: string }
+        ticker: { type: string, nullable: true }
+        name: { type: string }
+        quantity: { type: string, description: A decimal quantity string. }
+        cost_basis: { type: string, nullable: true, description: A decimal amount string. }
+        cost_basis_method: { type: string }
+        current_value: { $ref: '#/components/schemas/Money' }
+        current_price: { type: string, description: A decimal price string. }
+        daily_change_pct: { type: string, description: A decimal percentage string. }
+        price_source: { type: string }
+        currency: { type: string }
+        account_id: { type: string, format: uuid, nullable: true }
+        data_source: { type: string }
+        retirement_subtype: { type: string }
+        notes: { type: string, nullable: true }
+        acquired_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    Liability:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string }
+        principal: { type: string, description: A decimal amount string. }
+        current_balance: { type: string, description: A decimal amount string. }
+        interest_rate: { type: string, nullable: true, description: A decimal rate string. }
+        monthly_payment: { type: string, nullable: true, description: A decimal amount string. }
+        term_months: { type: integer, format: int32, nullable: true }
+        start_date: { type: string, format: date, nullable: true }
+        currency: { type: string }
+        account_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    AllocationEntry:
+      type: object
+      required: [label]
+      properties:
+        label: { type: string }
+        value: { type: string, description: A decimal amount string. }
+        percentage: { type: number, format: double }
+        day_change_amount: { type: string, nullable: true, description: A decimal amount string. }
+        day_change_pct: { type: string, nullable: true, description: A decimal percentage string. }
+    LiquidityBreakdown:
+      type: object
+      properties:
+        liquid: { type: string, description: A decimal amount string. }
+        investable: { type: string, description: A decimal amount string. }
+        illiquid: { type: string, description: A decimal amount string. }
+    NetWorthBreakdown:
+      type: object
+      properties:
+        liquidity: { $ref: '#/components/schemas/LiquidityBreakdown' }
+        by_asset_type:
+          type: array
+          items: { $ref: '#/components/schemas/AllocationEntry' }
+        by_currency:
+          type: array
+          items: { $ref: '#/components/schemas/AllocationEntry' }
+        by_retirement_subtype:
+          type: array
+          items: { $ref: '#/components/schemas/AllocationEntry' }
+    NetWorth:
+      type: object
+      properties:
+        net_worth: { type: string, description: A decimal amount string. }
+        total_assets: { type: string, description: A decimal amount string. }
+        total_liabilities: { type: string, description: A decimal amount string. }
+        base_currency: { type: string }
+        snapshot_date: { type: string, format: date }
+        is_manual: { type: boolean }
+        liquid_net_worth: { type: string, description: A decimal amount string. }
+        investable_net_worth: { type: string, description: A decimal amount string. }
+        breakdown: { $ref: '#/components/schemas/NetWorthBreakdown' }
+        computed_at: { type: string, format: date-time, nullable: true }
+    NetWorthHistoryPoint:
+      type: object
+      required: [date]
+      properties:
+        date: { type: string, format: date }
+        net_worth: { type: string, description: A decimal amount string. }
+        total_assets: { type: string, description: A decimal amount string. }
+        total_liabilities: { type: string, description: A decimal amount string. }
+        base_currency: { type: string }
+        liquid_net_worth: { type: string, description: A decimal amount string. }
+        investable_net_worth: { type: string, description: A decimal amount string. }
+    DebtSummaryPerCurrency:
+      type: object
+      required: [currency]
+      properties:
+        currency: { type: string }
+        total_debt: { type: string, description: A decimal amount string. }
+        debt_count: { type: integer, format: int32 }
+        total_ytd_interest_paid: { type: string, description: A decimal amount string. }
+        ytd_interest_debt_count: { type: integer, format: int32 }
+        estimated_monthly_interest: { type: string, description: A decimal amount string. }
+        estimated_interest_debt_count: { type: integer, format: int32 }
+    DebtSummary:
+      type: object
+      required: [summaries]
+      properties:
+        summaries:
+          type: array
+          items: { $ref: '#/components/schemas/DebtSummaryPerCurrency' }
+        total_debt_count: { type: integer, format: int32 }
+    DebtPayoffDebtResult:
+      type: object
+      required: [liability_id]
+      properties:
+        liability_id: { type: string, format: uuid }
+        payoff_month: { type: integer, format: int32 }
+        payoff_date: { type: string, format: date }
+        total_interest: { type: string, description: A decimal amount string. }
+        total_paid: { type: string, description: A decimal amount string. }
+        payoff_order: { type: integer, format: int32 }
+        negative_amortization: { type: boolean }
+    DebtBalance:
+      type: object
+      required: [liability_id]
+      properties:
+        liability_id: { type: string, format: uuid }
+        balance: { type: string, description: A decimal amount string. }
+    DebtPayoffTimelinePoint:
+      type: object
+      required: [month]
+      properties:
+        month: { type: string, description: The timeline month as YYYY-MM. }
+        total_balance: { type: string, description: A decimal amount string. }
+        cumulative_interest: { type: string, description: A decimal amount string. }
+        debts:
+          type: array
+          items: { $ref: '#/components/schemas/DebtBalance' }
+    ExcludedLiability:
+      type: object
+      required: [liability_id]
+      properties:
+        liability_id: { type: string, format: uuid }
+        reason: { type: string }
+    DebtPayoffPlan:
+      type: object
+      required: [debts]
+      properties:
+        debts:
+          type: array
+          items: { $ref: '#/components/schemas/DebtPayoffDebtResult' }
+        debt_free_date: { type: string, format: date }
+        total_interest: { type: string, description: A decimal amount string. }
+        total_paid: { type: string, description: A decimal amount string. }
+        baseline_total_interest: { type: string, description: A decimal amount string. }
+        interest_saved_vs_minimum: { type: string, description: A decimal amount string. }
+        minimum_required_budget: { type: string, description: A decimal amount string. }
+        currency: { type: string }
+        budget_insufficient: { type: boolean }
+        plan_feasible: { type: boolean }
+        horizon_exceeded: { type: boolean }
+        assumptions:
+          type: array
+          items: { type: string }
+        timeline:
+          type: array
+          items: { $ref: '#/components/schemas/DebtPayoffTimelinePoint' }
+        excluded:
+          type: array
+          items: { $ref: '#/components/schemas/ExcludedLiability' }
+    DebtPayoffPlanRequest:
+      type: object
+      description: The POST body for computing a debt payoff plan.
+      properties:
+        liability_ids:
+          type: array
+          items: { type: string, format: uuid }
+        strategy: { type: string, enum: [snowball, avalanche, custom] }
+        custom_order:
+          type: array
+          items: { type: string, format: uuid }
+          description: The explicit payoff order when strategy is custom.
+        total_monthly_budget: { type: string, description: A decimal amount string. }
+        extra_monthly_payment: { type: string, description: A decimal amount string. }
+    GoalUpdateRequest:
+      type: object
+      description: >-
+        The PATCH body for a goal. All fields are optional but at least one is
+        required. Unknown fields (status, is_shared, sort_order, funding, ...) are
+        rejected with 400 validation.
+      properties:
+        name: { type: string }
+        description:
+          type: string
+          description: Send an empty string to clear the description.
+        target_amount: { type: string, description: A decimal amount string. }
+        target_date:
+          type: string
+          format: date
+          description: YYYY-MM-DD, or an empty string to clear the target date.
+    GoalContributionRequest:
+      type: object
+      description: The POST body for recording a manual goal contribution.
+      required: [amount]
+      properties:
+        amount: { type: string, description: A positive decimal amount string. }
+        currency_code:
+          type: string
+          description: ISO 4217 code. Defaults to the goal's currency when omitted.
+        note: { type: string }
+        period_start:
+          type: string
+          format: date
+          description: The budget period (YYYY-MM-DD, first of month). Defaults to the current month.
+    BudgetMethodSwitchRequest:
+      type: object
+      description: The POST body for switching the active budget method.
+      required: [method, confirm]
+      properties:
+        method:
+          type: string
+          enum: [fifty_thirty_twenty, pay_yourself_first, zero_based, envelope, kakeibo, fire, values_based, custom]
+          description: The budget method to switch to.
+        confirm:
+          type: boolean
+          description: Must be true — the switch archives the current budget and creates a new one.
+    GoalContributionResult:
+      type: object
+      description: The result of recording a goal contribution.
+      properties:
+        contribution: { $ref: '#/components/schemas/GoalContribution' }
+        progress: { $ref: '#/components/schemas/GoalProgress' }
+    BudgetMethodSwitchResult:
+      type: object
+      description: The result of a budget method switch.
+      required: [new_budget_id, previous_budget_archived]
+      properties:
+        new_budget_id: { type: string, format: uuid }
+        previous_budget_archived: { type: boolean }
+    SpendingByCategoryRow:
+      type: object
+      required: [category_id]
+      properties:
+        category_id: { type: string, format: uuid }
+        category_name: { type: string }
+        amount: { type: string, description: A decimal amount string. }
+        percentage: { type: number, format: double }
+    IncomeVsExpenses:
+      type: object
+      required: [month]
+      properties:
+        month: { type: string, description: The month as YYYY-MM. }
+        income: { type: string, description: A decimal amount string. }
+        expenses: { type: string, description: A decimal amount string. }
+        net: { type: string, description: A decimal amount string. }
+        savings_rate: { type: string, description: A decimal percentage string. }
+    MonthSummary:
+      type: object
+      required: [month]
+      properties:
+        month: { type: string, description: The month as YYYY-MM. }
+        total_income: { type: string, description: A decimal amount string. }
+        total_expenses: { type: string, description: A decimal amount string. }
+        net_savings: { type: string, description: A decimal amount string. }
+        savings_rate: { type: string, description: A decimal percentage string. }
+        transaction_count: { type: integer, format: int32 }
+    CashFlowPoint:
+      type: object
+      required: [date]
+      properties:
+        date: { type: string, format: date }
+        projected_balance: { type: string, description: A decimal amount string. }
+        income: { type: string, description: A decimal amount string. }
+        expenses: { type: string, description: A decimal amount string. }
+    CashFlowProjection:
+      type: object
+      properties:
+        period_days: { type: integer, format: int32 }
+        expected_income: { type: string, description: A decimal amount string. }
+        expected_expenses: { type: string, description: A decimal amount string. }
+        net_cash_flow: { type: string, description: A decimal amount string. }
+        projected_balance: { type: string, description: A decimal amount string. }
+    CashFlowRecurringItem:
+      type: object
+      properties:
+        merchant: { type: string }
+        amount: { type: string, description: A decimal amount string. }
+        frequency: { type: string }
+        stream_type: { type: string }
+        next_expected: { type: string, format: date }
+    CashFlowForecast:
+      type: object
+      properties:
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/CashFlowPoint' }
+        starting_balance: { type: string, description: A decimal amount string. }
+        projected_end_balance: { type: string, description: A decimal amount string. }
+        starting_balance_available: { type: boolean }
+        currency: { type: string }
+        projections:
+          type: array
+          items: { $ref: '#/components/schemas/CashFlowProjection' }
+        recurring_items:
+          type: array
+          items: { $ref: '#/components/schemas/CashFlowRecurringItem' }
