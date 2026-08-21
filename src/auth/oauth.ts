@@ -43,7 +43,12 @@ interface TokenResponse {
 export interface OAuthDeps {
   baseUrl: string;
   store: TokenStore;
-  /** ISO scope string; defaults to offline_access (refresh-token grant). */
+  /**
+   * Space-delimited scope string. Omitted by default: the Authorization Server
+   * validates every requested scope against its registry and rejects unknown
+   * ones outright, and an absent scope means "all read scopes, no writes".
+   * Refresh tokens are issued regardless of what is requested here.
+   */
   scope?: string;
   /** Injectable for tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
@@ -83,7 +88,7 @@ function defaultOpenBrowser(url: string): void {
 export class OAuthProvider implements CredentialProvider {
   readonly #baseUrl: string;
   readonly #store: TokenStore;
-  readonly #scope: string;
+  readonly #scope: string | undefined;
   readonly #fetch: typeof fetch;
   readonly #openBrowser: (url: string) => void;
   readonly #now: () => number;
@@ -93,7 +98,7 @@ export class OAuthProvider implements CredentialProvider {
   constructor(deps: OAuthDeps) {
     this.#baseUrl = deps.baseUrl;
     this.#store = deps.store;
-    this.#scope = deps.scope ?? "offline_access";
+    this.#scope = deps.scope;
     this.#fetch = deps.fetchImpl ?? fetch;
     this.#openBrowser = deps.openBrowser ?? defaultOpenBrowser;
     this.#now = deps.now ?? (() => Date.now());
@@ -236,7 +241,7 @@ export class OAuthProvider implements CredentialProvider {
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         token_endpoint_auth_method: "none", // public client (PKCE, no secret).
-        scope: this.#scope,
+        scope: this.#scope, // undefined ⇒ omitted by JSON.stringify ⇒ server default.
       }),
     });
     if (!res.ok) {
@@ -259,7 +264,12 @@ export class OAuthProvider implements CredentialProvider {
     u.searchParams.set("response_type", "code");
     u.searchParams.set("client_id", clientId);
     u.searchParams.set("redirect_uri", redirectUri);
-    u.searchParams.set("scope", this.#scope);
+    // No scope param unless one was configured: the server treats an absent
+    // scope as "all read scopes", and hard-fails (invalid_scope, before any
+    // consent screen) on anything outside its registry.
+    if (this.#scope) {
+      u.searchParams.set("scope", this.#scope);
+    }
     u.searchParams.set("state", state);
     u.searchParams.set("code_challenge", challenge);
     u.searchParams.set("code_challenge_method", "S256");

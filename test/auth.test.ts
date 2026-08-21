@@ -250,7 +250,8 @@ describe("OAuthProvider interactive auth (loopback + DCR)", () => {
   // plus an openBrowser that plays the user: it visits the authorize URL's
   // loopback redirect_uri with the matching state and a fake code.
   function interactiveHarness(baseUrl: string, clientId: string) {
-    const registerBodies: Array<{ redirect_uris: string[] }> = [];
+    const registerBodies: Array<{ redirect_uris: string[]; scope?: string }> = [];
+    const authorizeUrls: string[] = [];
     const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
       if (url === `${baseUrl}/oauth/register`) {
         registerBodies.push(JSON.parse(init.body as string));
@@ -272,6 +273,7 @@ describe("OAuthProvider interactive auth (loopback + DCR)", () => {
       throw new Error(`unexpected url ${url}`);
     });
     const openBrowser = (authUrl: string) => {
+      authorizeUrls.push(authUrl);
       const u = new URL(authUrl);
       const state = u.searchParams.get("state") ?? "";
       const cb = new URL(u.searchParams.get("redirect_uri") ?? "");
@@ -280,7 +282,7 @@ describe("OAuthProvider interactive auth (loopback + DCR)", () => {
       // Real GET to the real loopback server (not the injected fetch).
       void fetch(cb.toString()).catch(() => {});
     };
-    return { registerBodies, fetchImpl, openBrowser };
+    return { registerBodies, authorizeUrls, fetchImpl, openBrowser };
   }
 
   it("runs the full loopback flow: registers a client for the current port and stores tokens", async () => {
@@ -324,6 +326,61 @@ describe("OAuthProvider interactive auth (loopback + DCR)", () => {
     // It registered a fresh client for the new port rather than reusing the stale one.
     expect(registerBodies).toHaveLength(1);
     expect(store.read(baseUrl).clientId).toBe("dyn-client-2");
+  });
+
+  // The Authorization Server validates requested scopes against its registry and
+  // hard-fails unknown ones with invalid_scope before any consent screen. An
+  // absent scope is its documented "all read scopes, no writes" default, so the
+  // unconfigured flow must send no scope at all — not offline_access, not "".
+  it("sends NO scope parameter by default (server default = all read scopes)", async () => {
+    const store = new TokenStore(tmpCacheFile());
+    const baseUrl = "https://api.403fin.io";
+    const { registerBodies, authorizeUrls, fetchImpl, openBrowser } = interactiveHarness(
+      baseUrl,
+      "dyn-client-3",
+    );
+
+    const provider = new OAuthProvider({
+      baseUrl,
+      store,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      openBrowser,
+    });
+
+    expect(await provider.getCredential()).toBe("ff_at_int");
+    expect(authorizeUrls).toHaveLength(1);
+    const params = new URL(authorizeUrls[0]).searchParams;
+    expect(params.has("scope")).toBe(false);
+    // The rest of the authorize request is unchanged.
+    expect(params.get("response_type")).toBe("code");
+    expect(params.get("client_id")).toBe("dyn-client-3");
+    expect(params.get("code_challenge_method")).toBe("S256");
+    expect(params.get("state")).toBeTruthy();
+    // Dynamic client registration likewise omits the key entirely.
+    expect(registerBodies[0]).not.toHaveProperty("scope");
+  });
+
+  it("passes a configured scope (FF_SCOPES) through verbatim", async () => {
+    const store = new TokenStore(tmpCacheFile());
+    const baseUrl = "https://api.403fin.io";
+    const { registerBodies, authorizeUrls, fetchImpl, openBrowser } = interactiveHarness(
+      baseUrl,
+      "dyn-client-4",
+    );
+    // Exactly what select.ts hands over from env.FF_SCOPES.
+    const scope = "accounts:read transactions:read goals:write";
+
+    const provider = new OAuthProvider({
+      baseUrl,
+      store,
+      scope,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      openBrowser,
+    });
+
+    expect(await provider.getCredential()).toBe("ff_at_int");
+    expect(new URL(authorizeUrls[0]).searchParams.get("scope")).toBe(scope);
+    expect(registerBodies[0].scope).toBe(scope);
   });
 });
 

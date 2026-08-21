@@ -6,8 +6,8 @@ import type { CredentialProvider } from "./types.js";
 
 /**
  * Choose the credential provider: an ff_ API key (FF_API_KEY) uses the API-key
- * path; otherwise the interactive OAuth 2.1 flow. FF_SCOPES overrides the
- * requested OAuth scope.
+ * path; otherwise the interactive OAuth 2.1 flow. FF_SCOPES narrows the
+ * requested OAuth scope; unset, the server grants all read scopes.
  */
 export function createCredentialProvider(
   config: Config,

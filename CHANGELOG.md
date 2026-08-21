@@ -48,5 +48,15 @@ machine it runs on.
   transaction" section documenting that `display_name` is the requesting user's
   own per-viewer label, never a replacement for the provider's `merchant`.
 
+### Fixed
+
+- **OAuth sign-in no longer requests a default scope.** Live end-to-end testing
+  found the interactive flow defaulted to `offline_access`, which the
+  Authorization Server — which validates every requested scope against its
+  registry — rejected with `invalid_scope` before the consent screen ever
+  rendered. The authorize request now carries no `scope` parameter unless
+  `FF_SCOPES` is set, which is the server's documented contract for "all read
+  scopes, no writes"; refresh tokens are issued either way.
+
 [Unreleased]: https://github.com/403ent/403fin-mcp/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/403ent/403fin-mcp/releases/tag/v1.0.0

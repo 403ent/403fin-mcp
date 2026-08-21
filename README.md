@@ -107,8 +107,9 @@ authorization-code flow with PKCE:
    automatically as needed.
 
 No client secret is involved (the client is registered dynamically as a public
-PKCE client). To force a specific scope, set `FF_SCOPES` (defaults to
-`offline_access`).
+PKCE client). No scope is requested by default, which grants all read scopes and
+no writes; set `FF_SCOPES` to narrow that further. Refresh tokens are issued
+either way.
 
 **Token cache location** (keyed per base URL, file `0600` / dir `0700`):
 
@@ -118,11 +119,11 @@ PKCE client). To force a specific scope, set `FF_SCOPES` (defaults to
 
 ## Environment variables
 
-| Variable      | Required | Default               | Purpose                                                        |
-| ------------- | -------- | --------------------- | -------------------------------------------------------------- |
-| `FF_API_KEY`  | no\*     | —                     | Your `ff_` API key. When set, selects API-key auth.            |
-| `FF_BASE_URL` | no       | `https://api.403fin.io` | API origin. Must be `https://`. Set this for self-hosting.   |
-| `FF_SCOPES`   | no       | `offline_access`      | OAuth scope string (OAuth mode only).                          |
+| Variable      | Required | Default                 | Purpose                                                                                                              |
+| ------------- | -------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `FF_API_KEY`  | no\*     | —                       | Your `ff_` API key. When set, selects API-key auth.                                                                  |
+| `FF_BASE_URL` | no       | `https://api.403fin.io` | API origin. Must be `https://`. Set this for self-hosting.                                                           |
+| `FF_SCOPES`   | no       | omitted                 | OAuth scope string (OAuth mode only). Omitted, the server grants all read scopes and no writes; set this to narrow.   |
 
 \* Either set `FF_API_KEY`, or leave it unset to use OAuth.
 
