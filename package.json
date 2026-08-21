@@ -1,6 +1,6 @@
 {
   "name": "@403fin/mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Model Context Protocol server for Forbidden Finance — a thin client over the public /v1 REST API.",
   "type": "module",
   "bin": {
