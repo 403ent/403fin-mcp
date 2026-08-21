@@ -15,8 +15,9 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "sourceMap": true,
+    // Bin-only package: dist/index.js is an executable, not an importable entry
+    // point (no main/exports/types), so declarations and source maps would ship
+    // as unreachable dead weight.
     "outDir": "dist",
     "rootDir": "src"
   },

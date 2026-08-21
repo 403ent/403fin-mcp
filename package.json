@@ -10,7 +10,9 @@
     "node": ">=22"
   },
   "files": [
-    "dist"
+    "dist",
+    "SECURITY.md",
+    "CHANGELOG.md"
   ],
   "license": "MIT",
   "author": "403 Finance, Inc.",

@@ -154,7 +154,8 @@ TLS verification.
 This connector enforces the redaction and account/category exclusion choices you
 configured for the credential — hidden fields and excluded accounts are omitted or
 reported as unavailable by the API, exactly as in the app. See
-[`SECURITY.md`](./SECURITY.md) for the full security model.
+[`SECURITY.md`](https://github.com/403ent/403fin-mcp/blob/main/SECURITY.md) for the
+full security model.
 
 ## Development
 
