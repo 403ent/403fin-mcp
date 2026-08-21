@@ -111,6 +111,14 @@ PKCE client). No scope is requested by default, which grants all read scopes and
 no writes; set `FF_SCOPES` to narrow that further. Refresh tokens are issued
 either way.
 
+To use the three write tools over OAuth, two things must both be true: request
+the write scopes — `goals:write` (covers `update_goal` and
+`record_goal_contribution`) and/or `budgets:write` (covers
+`switch_budget_method`) — via `FF_SCOPES`, e.g.
+`FF_SCOPES="goals:write budgets:write"` (a write scope implies its read scope),
+**and** enable **Allow changes** on the consent screen. Either one alone is not
+enough — writes stay off until you opt in on both.
+
 **Token cache location** (keyed per base URL, file `0600` / dir `0700`):
 
 - Linux/macOS: `$XDG_CONFIG_HOME/403fin-mcp/tokens.json` (or
