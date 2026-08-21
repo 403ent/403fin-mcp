@@ -10,6 +10,34 @@ info:
     Authenticate with an opaque ff_ credential (Bearer or X-API-Key). This spec
     describes the surface mounted at /v1; the spec document itself
     (/v1/openapi.json) is intentionally not listed here.
+
+
+    ## Names on a transaction
+
+
+    Four name fields can appear on a transaction or a recurring stream, and they
+    answer different questions. `display_name` is the requesting user's OWN label
+    for that merchant, coming from the display-name rules they set in the app;
+    it is present only when they have a rule matching the row. `merchant` is the
+    merchant name as the provider/bank reported it. `description` is the
+    transaction's description. (`original_description`, the raw bank descriptor,
+    is not exposed in v1.) The user-chosen label never overwrites the
+    provider values: grouping, recurring matching, search and rule lookup all
+    still key on `merchant`, so both are returned side by side.
+
+
+    A client that wants "the name the user sees in the app" should use
+    `display_name ?? merchant ?? description`. Recurring rules and upcoming
+    bills follow the same rule, resolved through the stream's sample
+    transaction.
+
+
+    `display_name` is PER-VIEWER, not a property of the row. Two members of one
+    household reading the same shared transaction get different values — each
+    sees their own label, or none — so it must never be cached, keyed, or
+    reconciled across users, and it is not a stable identifier. It is merchant
+    identity for privacy purposes: a connection whose privacy settings redact
+    `transaction.merchant` gets neither `merchant` nor `display_name`.
 servers:
   - url: https://api.403fin.io
 security:
@@ -1022,6 +1050,7 @@ components:
         category_id: { type: string, format: uuid, nullable: true }
         amount: { $ref: '#/components/schemas/Money' }
         merchant: { type: string }
+        display_name: { type: string, nullable: true, description: The requesting user's own label for this merchant; per-viewer, absent when they have no rule for it. See "Names on a transaction". }
         description: { type: string }
         date: { type: string, format: date }
         posted_at: { type: string, format: date-time, nullable: true }
@@ -1103,6 +1132,7 @@ components:
         transaction_date: { type: string, format: date }
         status: { type: string }
         covered_by_goal: { type: string }
+        covered_by_plan_line: { type: string, description: Name of the goal spending-plan line the absorbed spend was attributed to. }
     GroupProgress:
       type: object
       required: [group_id]
@@ -1115,6 +1145,7 @@ components:
         spent_percentage: { type: number, format: double }
         rollover_amount: { type: string, description: A decimal amount string. }
         upcoming_recurring_total: { type: string, description: A decimal amount string. }
+        phase_active: { type: boolean, description: False when the group is anchored to a different cycle phase than the period served — it received no fresh allocation, but its spend still counts. }
     BudgetProgress:
       type: object
       required: [budget_id]
@@ -1134,12 +1165,17 @@ components:
         anomalies:
           type: array
           items: { $ref: '#/components/schemas/BudgetAnomaly' }
+        period_start: { type: string, format: date, description: First day of the period these figures cover (inclusive). Budgets are not always calendar months. }
+        period_end: { type: string, format: date, description: Exclusive end of the period these figures cover — the first day NOT included. }
+        period_label: { type: string, description: Server-formatted display label for the period. }
+        is_current_period: { type: boolean, description: True when the period contains today and figures are still moving; false for frozen past periods. }
     RecurringRule:
       type: object
       required: [id]
       properties:
         id: { type: string, format: uuid }
         merchant: { type: string }
+        display_name: { type: string, nullable: true, description: The requesting user's own label for this stream's merchant; per-viewer, absent when they have no rule for it. See "Names on a transaction". }
         expected_amount: { type: string, description: A decimal amount string. }
         currency: { type: string }
         frequency: { type: string }
@@ -1161,6 +1197,7 @@ components:
       properties:
         rule_id: { type: string, format: uuid }
         merchant: { type: string }
+        display_name: { type: string, nullable: true, description: The requesting user's own label for this bill's merchant; per-viewer, absent when they have no rule for it. See "Names on a transaction". }
         expected_amount: { type: string, description: A decimal amount string. }
         expected_date: { type: string, format: date }
         frequency: { type: string }
