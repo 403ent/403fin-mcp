@@ -64,6 +64,70 @@ info:
     whose settings redact `connection.institution` gets no institution name and
     no logo anywhere — not on the connection, not on the account. `provider` and
     `source_aggregator` are never redacted; they name the rail, not the bank.
+
+
+    ## Writing through this API
+
+
+    Every write needs three things: a `:write` scope, the per-connection
+    `writes_enabled` opt-in (a scope alone is not enough — the user arms writes
+    separately), and an `Idempotency-Key`. Writes serve **200**, including
+    creates: a replayed response has to be byte-identical to the original, and a
+    replay cannot honestly report a 201.
+
+
+    A retry with the same key and the same body replays the stored response
+    (`Idempotency-Replayed: true`). The same key with a DIFFERENT body is a 409 —
+    so a **corrected** retry, including retrying the failed items of a bulk
+    categorize, needs a FRESH key. Reusing the old one gets you the old answer.
+
+
+    Transaction scopes come in two sizes. `transactions.annotate:write` covers
+    only the additive edits — category, tags, memo, location — through
+    `POST /v1/transactions/{id}/annotate` and `POST /v1/transactions/categorize`.
+    `transactions:write` is full edit (create, change any field, delete) and
+    subsumes the annotate scope, so a connection granted it does not also need
+    the narrow one. A categorizing integration should ask for the narrow scope
+    and will then find create, PATCH, and DELETE refused with
+    `insufficient-scope`.
+
+
+    Writes made through this API never teach the categorizer. Every transaction
+    edit is applied with `suppress_rule_learning` (no per-merchant rule is
+    created or updated, no vote reaches the global category model, and no
+    categorization event is published) and `refuse_split_replacement` (a category
+    change on a SPLIT row is refused rather than flattening the user's own
+    attribution). One integration's opinion does not become everyone's default.
+
+
+    ### Write refusals that are about the resource, not your request
+
+
+    These carry a fixed `detail` you can match on. The string is the same for
+    every caller in that case; it never names the resource.
+
+
+    * **409 conflict** — "Bank-synced transactions cannot be deleted. The bank is
+      the source of truth for them." A sync would recreate the row.
+    * **409 conflict** — "System categories cannot be changed or deleted through
+      the API." The seeded defaults are app-only.
+    * **409 conflict** — "This goal mirrors a linked account's balance and records
+      contributions automatically. Adjust the target instead of contributing."
+      Read `tracking_mode` on the goal to predict this.
+    * **409 conflict** — "This account has reached its limit on custom categories.
+      Delete one before creating another." Not a rate limit; retrying will not
+      help.
+    * **403 forbidden** — "This connection's privacy settings hide a field this
+      request would change." A connection cannot edit what it is not allowed to
+      read. The detail names no field: which fields are hidden is itself the
+      configuration, so a per-field answer would let you enumerate it by probing.
+    * **422 field-immutable** — "A transaction's currency is set when it is
+      created and cannot be changed. Delete the transaction and create it again
+      in the currency you want."
+
+
+    Version conflicts (a stale `expected_version`) are **409 conflict** with the
+    generic detail: re-read the row and retry with the version you got.
 servers:
   - url: https://api.403fin.io
 security:
@@ -243,6 +307,87 @@ paths:
                         type: array
                         items: { $ref: '#/components/schemas/Transaction' }
         default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [transactions]
+      operationId: createTransaction
+      summary: Create a manual transaction
+      description: >-
+        Creates a manual transaction. Requires the transactions:write scope,
+        writes_enabled, and an Idempotency-Key (a double-fired create would
+        otherwise post the same spending twice).
+
+
+        The target account must be visible to this connection: an excluded
+        account and a nonexistent one both return 404, byte-identical, so a
+        hidden account cannot be found by probing which ids accept a write. The
+        same holds for category_id.
+
+
+        Returns 200, not 201. Every write on this API serves 200 so that a
+        replayed response is byte-identical to the original — a replay cannot
+        honestly claim to have created anything, and two different status codes
+        for one stored response would be worse than the REST purism is worth.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionCreateRequest' }
+      responses:
+        '200':
+          description: The created transaction (redacted per connection scope).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Transaction' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/transactions/categorize:
+    post:
+      tags: [transactions]
+      operationId: categorizeTransactions
+      summary: Categorize transactions in bulk
+      description: >-
+        Assigns categories to 1-100 transactions in one call. Requires the
+        transactions.annotate:write scope (transactions:write reaches it too),
+        writes_enabled, and an Idempotency-Key.
+
+
+        The outcome is PARTIAL by design: a mixed result is 200, applied_count
+        says how many rows were written, and every item reports itself as
+        applied, not_found, invalid_category, version_conflict, or split. To
+        retry the ones that failed, send a NEW batch with a FRESH
+        Idempotency-Key — reusing the original key replays the original
+        response and changes nothing, and reusing it with a corrected body is a
+        409.
+
+
+        Exclusions are applied server-side from this connection's privacy
+        settings: rows on excluded accounts come back not_found, and an excluded
+        category comes back invalid_category.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionCategorizeRequest' }
+      responses:
+        '200':
+          description: Per-item outcomes plus the count of rows actually written.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/BulkCategorizeResult' }
+        default: { $ref: '#/components/responses/Problem' }
   /v1/transactions/search:
     get:
       tags: [transactions]
@@ -291,6 +436,111 @@ paths:
                     properties:
                       data: { $ref: '#/components/schemas/Transaction' }
         default: { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [transactions]
+      operationId: updateTransaction
+      summary: Update a transaction
+      description: >-
+        Edits a transaction. Requires the transactions:write scope,
+        writes_enabled, an Idempotency-Key, and expected_version in the body.
+
+
+        Bank-synced rows are fully editable here: the bank-recorded value of each
+        field is captured at the FIRST user edit, so nothing is destroyed, and
+        revert_to_provider puts it back and hands ownership to the provider
+        again.
+
+
+        409 covers three cases with the same status: expected_version did not
+        match (re-read and retry), the row is a SPLIT parent and the requested
+        category change would have replaced its slices, and revert_to_provider
+        named a field with no captured bank value. A write touching a field this
+        connection's privacy settings hide is 403; changing the currency is 422
+        field-immutable.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionUpdateRequest' }
+      responses:
+        '200':
+          description: The updated transaction (redacted per connection scope).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Transaction' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [transactions]
+      operationId: deleteTransaction
+      summary: Delete a transaction
+      description: >-
+        Deletes a manual or imported transaction. Requires the
+        transactions:write scope, writes_enabled, and an Idempotency-Key.
+
+
+        Bank-synced transactions are NOT deletable and return 409 with the
+        detail "Bank-synced transactions cannot be deleted. The bank is the
+        source of truth for them." — the next sync would recreate the row, so
+        the deletion would not be a deletion. An excluded or nonexistent
+        transaction returns the same 404.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: The deletion result.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/TransactionDeleteResult' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/transactions/{id}/annotate:
+    post:
+      tags: [transactions]
+      operationId: annotateTransaction
+      summary: Annotate a transaction
+      description: >-
+        Sets a transaction's category, tags, memo, or location — the additive
+        edits the narrow transactions.annotate:write scope covers. Requires
+        writes_enabled and an Idempotency-Key. A connection holding only this
+        scope cannot create, delete, or otherwise edit a transaction.
+
+
+        No expected_version is needed: the server reads the row and uses its
+        current version. A concurrent edit between that read and the write still
+        loses the race and returns 409.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionAnnotateRequest' }
+      responses:
+        '200':
+          description: The annotated transaction (redacted per connection scope).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Transaction' }
+        default: { $ref: '#/components/responses/Problem' }
   /v1/categories:
     get:
       tags: [transactions]
@@ -309,6 +559,104 @@ paths:
                       data:
                         type: array
                         items: { $ref: '#/components/schemas/Category' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [transactions]
+      operationId: createCategory
+      summary: Create a custom category
+      description: >-
+        Creates a custom category. Requires the categories:write scope,
+        writes_enabled, and an Idempotency-Key. Categories nest one level, so
+        parent_id must name a visible top-level category. Reaching the
+        per-account category limit returns 409 (waiting does not help), never a
+        rate limit.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryCreateRequest' }
+      responses:
+        '200':
+          description: The created category.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Category' }
+        default: { $ref: '#/components/responses/Problem' }
+  /v1/categories/{id}:
+    patch:
+      tags: [transactions]
+      operationId: updateCategory
+      summary: Update a category
+      description: >-
+        Renames, re-parents, or restyles a custom category. Requires the
+        categories:write scope, writes_enabled, and an Idempotency-Key.
+
+
+        A SYSTEM category (is_system true — the seeded defaults) returns 409 with
+        the detail "System categories cannot be changed or deleted through the
+        API."; every other feature keys on that tree, so it is not a programmatic
+        caller's to rewrite. An excluded or nonexistent category returns the same
+        404.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryUpdateRequest' }
+      responses:
+        '200':
+          description: The updated category.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Category' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [transactions]
+      operationId: deleteCategory
+      summary: Delete a category
+      description: >-
+        Deletes a custom category. Requires the categories:write scope,
+        writes_enabled, and an Idempotency-Key. The body is optional: with none,
+        the category's transactions become uncategorized; with
+        merge_into_category_id they are reassigned to that category, which must
+        itself be visible to this connection.
+
+
+        System categories return 409, as on PATCH. A category with subcategories
+        returns 409 — move or delete them first.
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryDeleteRequest' }
+      responses:
+        '200':
+          description: The deletion result, with the number of transactions reassigned.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/CategoryDeleteResult' }
         default: { $ref: '#/components/responses/Problem' }
   /v1/budgets:
     get:
@@ -908,10 +1256,16 @@ components:
       required: true
       description: >-
         A caller-chosen unique key (1-128 chars) that makes the write idempotent.
-        A retry with the SAME key and body replays the original response
-        (Idempotency-Replayed: true); the same key with a DIFFERENT body is a 409
-        conflict; a still-in-flight duplicate is 409 with Retry-After. Required on
-        every write. Stored for 24 hours.
+        A retry with the SAME key against the SAME operation, resource, and body
+        replays the original response (Idempotency-Replayed: true). The same key
+        with anything different — a changed body, a different endpoint, or a
+        different {id} — is a 409 conflict; a still-in-flight duplicate is 409
+        with Retry-After. Required on every write. Stored for 24 hours.
+
+
+        The key is bound to the target, not only to the payload, so reusing one
+        key across two deletes (which carry no body at all) conflicts rather than
+        replaying the first delete's response.
       schema: { type: string, minLength: 1, maxLength: 128 }
     StartDate:
       name: start_date
@@ -988,6 +1342,7 @@ components:
         - not-found
         - conflict
         - partner-approval-required
+        - field-immutable
         - data-excluded
         - rate-limited
         - quota-exceeded
@@ -1129,8 +1484,35 @@ components:
           type: array
           items: { type: string }
         check_number: { type: string, nullable: true }
+        memo: { type: string, nullable: true, description: The user-authored memo. Redacted under transaction.memo. }
+        location:
+          allOf:
+            - $ref: '#/components/schemas/TransactionLocation'
+          nullable: true
+          description: Where the purchase happened. Redacted as ONE unit under transaction.location.
+        version:
+          type: integer
+          format: int32
+          description: >-
+            The optimistic-concurrency token. PATCH /v1/transactions/{id}
+            requires it as expected_version; a stale value is a 409 and the
+            caller re-reads. Always present, including on a row at version 0.
         created_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time, nullable: true }
+    TransactionLocation:
+      type: object
+      description: >-
+        A purchase location. Redacted as a single unit (transaction.location) —
+        a city plus a postal code answers "where were you" as surely as a street
+        line does, so the components are never hidden separately. On a write it
+        is GROUP-REPLACE: the components sent become the whole stored location
+        and omitted ones are cleared. Use clear_location to remove it entirely.
+      properties:
+        street: { type: string }
+        city: { type: string }
+        state: { type: string }
+        postal_code: { type: string }
+        country: { type: string }
     Category:
       type: object
       required: [id]
@@ -1310,6 +1692,15 @@ components:
         currency: { type: string }
         target_date: { type: string, format: date, nullable: true }
         funding_source_type: { type: string }
+        tracking_mode:
+          type: string
+          enum: [budget_driven, balance_mirror, rule_split]
+          description: >-
+            What moves current_amount. budget_driven is recorded contributions;
+            balance_mirror republishes a linked account's live balance;
+            rule_split takes a persisted share of arriving money. A
+            balance_mirror goal REFUSES POST /v1/goals/{id}/contributions with
+            409 — read this field to know that before you call.
         sort_order: { type: integer, format: int32 }
         show_in_digest: { type: boolean }
         account_links:
@@ -1571,6 +1962,213 @@ components:
         confirm:
           type: boolean
           description: Must be true — the switch archives the current budget and creates a new one.
+    TransactionCreateRequest:
+      type: object
+      description: >-
+        The POST body for a manual transaction. account_id must name an account
+        this connection can see: an excluded account and a nonexistent one are
+        the same 404, so a hidden account cannot be discovered by probing.
+        currency_code defaults to the account's currency.
+
+
+        Fields the first-party app has and this body does NOT: apply_to_merchant
+        and create_merchant_rule (a programmatic write never teaches the
+        categorizer), splits and receipt_ids (v1 exposes neither resource),
+        use_subcategories, and category_from_ai_suggestion (a record of a HUMAN
+        accepting a suggestion). Sending any of them is 400 validation.
+      required: [account_id, amount, date]
+      properties:
+        account_id: { type: string, format: uuid }
+        amount:
+          type: string
+          description: A decimal amount string, negative for spending. Never a float.
+        currency_code:
+          type: string
+          description: ISO 4217 code. Defaults to the account's currency.
+        merchant: { type: string }
+        description: { type: string }
+        date: { type: string, format: date, description: YYYY-MM-DD. }
+        category_id: { type: string, format: uuid }
+        tags:
+          type: array
+          items: { type: string }
+        memo: { type: string }
+        location: { $ref: '#/components/schemas/TransactionLocation' }
+    TransactionUpdateRequest:
+      type: object
+      description: >-
+        The PATCH body for a transaction. expected_version is REQUIRED — send the
+        version you read; if the row changed since, you get 409 and re-read. At
+        least one mutating field is required alongside it.
+
+
+        A transaction's currency cannot be changed (422 field-immutable): create
+        the row again in the currency you want. `tags: []` clears every tag,
+        while omitting tags leaves them alone. location and clear_location are
+        mutually exclusive. revert_to_provider hands named fields back to the
+        bank, restoring what it recorded before the first user edit; naming a
+        field this same request also sets is 400.
+
+
+        Every edit through this endpoint sets suppress_rule_learning (it will not
+        create or update a merchant rule, vote in the global category model, or
+        publish a categorization event) and refuse_split_replacement (a
+        category change on a SPLIT row is refused, not applied over the slices).
+      required: [expected_version]
+      properties:
+        expected_version: { type: integer, format: int32 }
+        merchant: { type: string }
+        description: { type: string }
+        date: { type: string, format: date }
+        amount: { type: string, description: A decimal amount string. The row keeps the currency it settled in. }
+        category_id: { type: string, format: uuid }
+        tags:
+          type: array
+          items: { type: string }
+          description: Replaces every tag. An empty array clears them all.
+        memo: { type: string, description: An empty string clears the memo. }
+        location: { $ref: '#/components/schemas/TransactionLocation' }
+        clear_location: { type: boolean, description: Removes the whole stored location. }
+        revert_to_provider:
+          type: array
+          items: { type: string, enum: [amount, merchant, description, date, memo] }
+          description: >-
+            Restore these fields from what the bank recorded before the row's
+            first user edit, handing ownership back to the provider so later
+            syncs update them again. 409 when there is no captured value to
+            revert to (an unedited row, or a manual one that never had a bank
+            value).
+    TransactionAnnotateRequest:
+      type: object
+      description: >-
+        The POST body for annotating a transaction — the narrow, additive edits
+        the transactions.annotate:write scope covers. At least one field is
+        required.
+
+
+        There is NO expected_version: the server reads the row and uses its
+        current version, so a categorizing caller need not carry concurrency
+        tokens. A row that changes underneath still loses the race (409).
+      properties:
+        category_id: { type: string, format: uuid }
+        tags:
+          type: array
+          items: { type: string }
+          description: Replaces every tag. An empty array clears them all.
+        memo: { type: string, description: An empty string clears the memo. }
+        location: { $ref: '#/components/schemas/TransactionLocation' }
+        clear_location: { type: boolean }
+    TransactionCategorizeItem:
+      type: object
+      description: One assignment in a bulk categorize.
+      required: [transaction_id, category_id]
+      properties:
+        transaction_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        expected_version:
+          type: integer
+          format: int32
+          description: >-
+            Optional per item. Omit to apply regardless of the stored version;
+            send it to have THIS item come back version_conflict rather than
+            overwrite a change you did not see.
+    TransactionCategorizeRequest:
+      type: object
+      description: >-
+        The POST body for a bulk categorize: 1 to 100 items. A duplicate
+        transaction_id is 400 for the whole batch — two assignments for one row
+        would produce two results with no way to tell which describes the stored
+        state. Account and category exclusions are applied server-side from the
+        connection's own privacy settings and cannot be supplied here.
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/TransactionCategorizeItem' }
+    CategoryCreateRequest:
+      type: object
+      description: >-
+        The POST body for a custom category. parent_id must name a visible
+        top-level category (categories nest one level). Reaching the per-account
+        category limit is 409, not a rate limit — waiting does not help.
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 60 }
+        parent_id: { type: string, format: uuid }
+        icon: { type: string, description: 'A Material icon name, or "emoji:<grapheme>".' }
+        color: { type: string, description: 'A hex color, e.g. "#FF5733".' }
+    CategoryUpdateRequest:
+      type: object
+      description: >-
+        The PATCH body for a category. At least one field is required. An empty
+        string means "leave unchanged", so a name or icon cannot be blanked here;
+        removing a PARENT has its own flag. System categories are not editable
+        (409).
+      properties:
+        name: { type: string, maxLength: 60 }
+        parent_id: { type: string, format: uuid }
+        clear_parent: { type: boolean, description: Move the category to the top level. }
+        icon: { type: string }
+        color: { type: string }
+    CategoryDeleteRequest:
+      type: object
+      description: >-
+        The OPTIONAL DELETE body. With no body (the ordinary case) the deleted
+        category's transactions become uncategorized; naming a merge target
+        reassigns them to it instead.
+      properties:
+        merge_into_category_id: { type: string, format: uuid }
+    TransactionDeleteResult:
+      type: object
+      description: The result of deleting a transaction.
+      required: [deleted, id]
+      properties:
+        deleted: { type: boolean }
+        id: { type: string, format: uuid }
+    BulkCategorizeItemResult:
+      type: object
+      description: >-
+        One row's outcome. not_found and invalid_category are deliberately
+        coarse: a row or category hidden by this connection's exclusions is
+        indistinguishable from one that never existed.
+      required: [transaction_id, status]
+      properties:
+        transaction_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [applied, not_found, invalid_category, version_conflict, split]
+          description: >-
+            applied — the category was assigned and the row is verified.
+            not_found — no such transaction for this caller.
+            invalid_category — the target category is not assignable by this caller.
+            version_conflict — expected_version did not match; nothing was written.
+            split — the row is a split parent whose slices carry the attribution;
+            refused rather than flattened.
+    BulkCategorizeResult:
+      type: object
+      description: >-
+        The result of a bulk categorize. This call is PARTIAL by design: a mixed
+        outcome is still 200, and every submitted item explains itself. Retry the
+        items you want to retry with a FRESH Idempotency-Key — replaying the
+        original key returns the original response, corrections included or not.
+      required: [applied_count, results]
+      properties:
+        applied_count: { type: integer, format: int32 }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/BulkCategorizeItemResult' }
+    CategoryDeleteResult:
+      type: object
+      description: The result of deleting a category.
+      required: [deleted, transactions_merged]
+      properties:
+        deleted: { type: boolean }
+        transactions_merged:
+          type: integer
+          format: int64
+          description: Transactions reassigned to merge_into_category_id; 0 when not merging.
     GoalContributionResult:
       type: object
       description: The result of recording a goal contribution.

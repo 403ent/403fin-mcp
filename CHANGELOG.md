@@ -7,11 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Eight write tools** (32 → 40 tools, 3 → 11 writes), generated from the
+  gateway's write surface v2: `create_transaction`, `update_transaction`,
+  `delete_transaction`, `annotate_transaction`, `categorize_transactions`,
+  `create_category`, `update_category`, and `delete_category`. Each still takes
+  an optional `idempotency_key` defaulting to a per-call random UUID, so a retry
+  replays rather than applies twice.
+- **Three new write scopes**, and the two transaction ones are deliberately
+  different sizes: `transactions.annotate:write` reaches only
+  `annotate_transaction` and `categorize_transactions`, so an assistant that sorts
+  spending into categories can never change an amount or delete a row;
+  `transactions:write` reaches all five; `categories:write` reaches the three
+  category tools. README documents the scope-to-tool map.
+- **`destructive` on every `ToolSpec`**, pinned by name in
+  `scripts/generate-tools.ts` and asserted by the conformance test rather than
+  guessed from the HTTP verb. It feeds `destructiveHint`, whose MCP default is
+  *true* when omitted — so each additive write now says `false` out loud, and the
+  three tools that remove or replace something the user already had
+  (`delete_transaction`, `delete_category`, `switch_budget_method`) say `true`.
+  This replaces the single hardcoded `switch_budget_method` check in `server.ts`.
+
 ### Changed
 
-- Refreshed `openapi.yaml` for the API's transaction-attribution revision. The
-  drift is additive and response-side only, so the tool table is unchanged (32
-  tools, 3 writes): accounts gained `institution_name` and
+- The tool generator now emits **object and object-array** input schemas instead
+  of collapsing them to strings. The new writes needed it: a transaction's
+  `location` is a five-component object, and a bulk categorize's `items` is an
+  array of `{transaction_id, category_id, expected_version?}`. Flattening either
+  would have handed the model a schema its correct call could not satisfy. The 32
+  pre-existing tools regenerate byte-for-byte unchanged apart from the new field.
+- `record_goal_contribution`'s description now names the balance-mirror refusal:
+  a goal that mirrors a linked account's balance records contributions
+  automatically and rejects a manual one — adjust its target instead. Read
+  `tracking_mode` on the goal to know which kind it is before calling.
+
+- Refreshed `openapi.yaml` for the API's transaction-attribution revision. That
+  drift was additive and response-side only, so it left the tool table unchanged
+  (the write surface above is what grew it): accounts gained `institution_name` and
   `institution_logo_url`, populated only when an account's own bank differs from
   its connection's; connections gained `source_aggregator`, naming the
   aggregator a provider fronts (Finicity or MX behind Quiltt). A new "Where a

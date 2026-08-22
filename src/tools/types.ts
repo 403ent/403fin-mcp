@@ -16,6 +16,13 @@ export interface ToolSpec {
    * read. Writes send the Idempotency-Key header.
    */
   isWrite: boolean;
+  /**
+   * True iff calling this tool REMOVES or REPLACES something the user already
+   * had. Pinned in scripts/generate-tools.ts (DESTRUCTIVE_TOOLS), not derived
+   * from the spec, and mirrors the gateway's own set — it feeds destructiveHint,
+   * whose protocol default is true, so every additive write must say false.
+   */
+  destructive: boolean;
   /** Input field names that interpolate into the path template. */
   pathParams: string[];
   /** Input field names appended as query-string parameters. */

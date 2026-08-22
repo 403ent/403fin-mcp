@@ -1,12 +1,16 @@
 #!/usr/bin/env tsx
 // Code generator: reads the committed openapi.yaml and emits src/tools/generated.ts,
-// one ToolSpec per /v1 operation (32 total). Run with `npm run generate`.
+// one ToolSpec per /v1 operation (40 total). Run with `npm run generate`.
 //
 // The endpoint map, path/query params, request-body fields, and per-field zod
 // schemas are all derived from the spec. Descriptions are overlaid by operationId
 // from src/descriptions.ts. The write discriminator is NOT the HTTP verb: a tool
 // isWrite iff its operation declares a required `Idempotency-Key` header parameter
 // (so computeDebtPayoffPlan, a POST, is correctly a READ).
+//
+// `destructive` is NOT derivable from the spec — "does this remove something the
+// user already had" is a product judgement — so DESTRUCTIVE_TOOLS below pins it,
+// mirroring the gateway's own destructiveTools map in mcpserver/registry.go.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -53,7 +57,27 @@ const OPERATION_TO_TOOL: Record<string, string> = {
   insightsIncomeVsExpenses: "get_income_vs_expenses",
   insightsMonthSummary: "get_month_summary",
   insightsCashFlowForecast: "get_cash_flow_forecast",
+  createTransaction: "create_transaction",
+  updateTransaction: "update_transaction",
+  deleteTransaction: "delete_transaction",
+  annotateTransaction: "annotate_transaction",
+  categorizeTransactions: "categorize_transactions",
+  createCategory: "create_category",
+  updateCategory: "update_category",
+  deleteCategory: "delete_category",
 };
+
+// Tools whose call REMOVES or REPLACES something the user already had. A client
+// that gates destructive tools behind a confirmation should gate exactly these;
+// every other write is additive or an in-place field edit. Pinned by hand and
+// byte-for-byte the gateway's destructiveTools set — the MCP annotation defaults
+// destructiveHint to TRUE when absent, so an additive tool has to say false out
+// loud or it would advertise itself as destructive.
+const DESTRUCTIVE_TOOLS = new Set<string>([
+  "switch_budget_method",
+  "delete_transaction",
+  "delete_category",
+]);
 
 // biome-ignore lint/suspicious/noExplicitAny: OpenAPI documents are dynamically shaped.
 type Json = any;
@@ -90,8 +114,10 @@ interface Field {
   zod: string;
 }
 
-// Emit zod source for one OpenAPI schema (primitive shapes only — the /v1 inputs
-// are all scalars, enums, or arrays of scalars).
+// Emit zod source for one OpenAPI schema. Recursive: the write surface introduced
+// object-typed inputs (a transaction's `location`) and arrays of objects (a bulk
+// categorize's `items`), and flattening either to a string would hand the model a
+// schema its correct call cannot satisfy.
 function zodFor(schema: Json, required: boolean, description?: string): string {
   let base: string;
   if (Array.isArray(schema.enum)) {
@@ -108,9 +134,13 @@ function zodFor(schema: Json, required: boolean, description?: string): string {
   } else if (schema.type === "boolean") {
     base = "z.boolean()";
   } else if (schema.type === "array") {
-    const item = deref(schema.items ?? {});
-    const itemExpr = item.format === "uuid" ? "z.string().uuid()" : "z.string()";
-    base = `z.array(${itemExpr})`;
+    base = `z.array(${zodFor(deref(schema.items ?? {}), true)})`;
+  } else if (schema.type === "object" || schema.properties) {
+    const req: string[] = schema.required ?? [];
+    const props = Object.entries(schema.properties ?? {})
+      .map(([name, raw]) => `${name}: ${zodFor(deref(raw), req.includes(name))}`)
+      .join(", ");
+    base = `z.object({ ${props} })`;
   } else {
     base = "z.unknown()";
   }
@@ -130,6 +160,7 @@ interface GeneratedTool {
   method: string;
   path: string;
   isWrite: boolean;
+  destructive: boolean;
   pathParams: string[];
   queryParams: string[];
   bodyParams: string[];
@@ -202,12 +233,17 @@ for (const [path, pathItem] of Object.entries(spec.paths)) {
       });
     }
 
+    if (!isWrite && DESTRUCTIVE_TOOLS.has(toolName)) {
+      throw new Error(`${toolName} is pinned destructive but is not a write`);
+    }
+
     generated.push({
       toolName,
       operationId,
       method: method.toUpperCase(),
       path,
       isWrite,
+      destructive: DESTRUCTIVE_TOOLS.has(toolName),
       pathParams,
       queryParams,
       bodyParams,
@@ -227,6 +263,7 @@ function emitTool(t: GeneratedTool): string {
     method: ${JSON.stringify(t.method)},
     path: ${JSON.stringify(t.path)},
     isWrite: ${t.isWrite},
+    destructive: ${t.destructive},
     pathParams: ${JSON.stringify(t.pathParams)},
     queryParams: ${JSON.stringify(t.queryParams)},
     bodyParams: ${JSON.stringify(t.bodyParams)},
@@ -237,11 +274,16 @@ ${shape}
   },`;
 }
 
+const writeNames = generated.filter((t) => t.isWrite).map((t) => t.toolName);
+const destructiveNames = generated.filter((t) => t.destructive).map((t) => t.toolName);
+
 const header = `// AUTO-GENERATED by scripts/generate-tools.ts from openapi.yaml. DO NOT EDIT.
 //
-// Run \`npm run generate\` to regenerate. ${generated.length} tools; the write set is
-// exactly the operations that declare a required Idempotency-Key header
-// (update_goal, record_goal_contribution, switch_budget_method).
+// Run \`npm run generate\` to regenerate. ${generated.length} tools. The write set is
+// exactly the ${writeNames.length} operations that declare a required Idempotency-Key header
+// (${writeNames.join(", ")}).
+// Of those, ${destructiveNames.join(", ")} are
+// marked destructive: they remove or replace something the user already had.
 
 import { z } from "zod";
 import { descriptions } from "../descriptions.js";

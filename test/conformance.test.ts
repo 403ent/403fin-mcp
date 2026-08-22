@@ -83,9 +83,9 @@ const specOps = collectOps();
 const opById = new Map(specOps.map((o) => [o.operationId, o]));
 
 describe("tool ↔ openapi conformance", () => {
-  it("generates exactly 32 tools", () => {
-    expect(tools).toHaveLength(32);
-    expect(specOps).toHaveLength(32);
+  it("generates exactly 40 tools", () => {
+    expect(tools).toHaveLength(40);
+    expect(specOps).toHaveLength(40);
   });
 
   it("covers every operationId exactly once, no extras", () => {
@@ -136,12 +136,45 @@ describe("tool ↔ openapi conformance", () => {
     expect(payoff?.isWrite).toBe(false);
   });
 
-  it("the write set is exactly the three idempotent writes", () => {
+  it("the write set is exactly the eleven idempotent writes", () => {
     const writes = tools
       .filter((t) => t.isWrite)
       .map((t) => t.toolName)
       .sort();
-    expect(writes).toEqual(["record_goal_contribution", "switch_budget_method", "update_goal"]);
+    expect(writes).toEqual([
+      "annotate_transaction",
+      "categorize_transactions",
+      "create_category",
+      "create_transaction",
+      "delete_category",
+      "delete_transaction",
+      "record_goal_contribution",
+      "switch_budget_method",
+      "update_category",
+      "update_goal",
+      "update_transaction",
+    ]);
+  });
+
+  // destructiveHint defaults to TRUE when a tool omits it, so this pin is what
+  // stops an additive write from advertising itself as destructive — and stops a
+  // destructive one from quietly going unmarked. The set mirrors the gateway's
+  // own destructiveTools map; the two surfaces must agree about which calls a
+  // client should put behind a confirmation.
+  it("the destructive set is exactly the three removing writes", () => {
+    const destructive = tools
+      .filter((t) => t.destructive)
+      .map((t) => t.toolName)
+      .sort();
+    expect(destructive).toEqual(["delete_category", "delete_transaction", "switch_budget_method"]);
+  });
+
+  it("no read is marked destructive", () => {
+    for (const tool of tools) {
+      if (!tool.isWrite) {
+        expect(tool.destructive, tool.toolName).toBe(false);
+      }
+    }
   });
 
   it("every description is the verbatim string keyed by operationId", () => {

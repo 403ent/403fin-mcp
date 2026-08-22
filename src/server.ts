@@ -4,11 +4,12 @@ import { tools } from "./tools/index.js";
 import { SERVER_NAME, VERSION } from "./version.js";
 
 /**
- * Build the Forbidden Finance MCP server and register all 32 tools. Every tool is
+ * Build the Forbidden Finance MCP server and register all 40 tools. Every tool is
  * a thin adapter over executeTool → the public /v1 API; no business logic lives
- * here. Reads are marked readOnly; the three writes carry an idempotent hint (they
- * are made safe to retry by an Idempotency-Key), and switch_budget_method is also
- * flagged destructive (it archives the current budget).
+ * here. Reads are marked readOnly; the 11 writes carry an idempotent hint (they
+ * are made safe to retry by an Idempotency-Key), and the ones that remove or
+ * replace something the user already had — switch_budget_method, which archives
+ * the current budget, plus the two deletes — are also flagged destructive.
  */
 export function createServer(ctx: ClientContext): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: VERSION });
@@ -22,7 +23,7 @@ export function createServer(ctx: ClientContext): McpServer {
         annotations: {
           title: spec.toolName,
           readOnlyHint: !spec.isWrite,
-          destructiveHint: spec.toolName === "switch_budget_method",
+          destructiveHint: spec.destructive,
           idempotentHint: spec.isWrite,
           openWorldHint: true,
         },

@@ -10,8 +10,12 @@ It is a thin, open-source client: every tool call is a single authenticated HTTP
 request to `/v1`. There is no backend code and no data store. Your credential and
 OAuth tokens stay on your machine.
 
-- **32 tools** — 29 read-only, 3 writes (`update_goal`,
-  `record_goal_contribution`, `switch_budget_method`).
+- **40 tools** — 29 read-only and 11 writes: transactions
+  (`create_transaction`, `update_transaction`, `delete_transaction`,
+  `annotate_transaction`, `categorize_transactions`), categories
+  (`create_category`, `update_category`, `delete_category`), goals
+  (`update_goal`, `record_goal_contribution`), and `switch_budget_method`.
+  Writes need a connection with writes enabled and the matching `:write` scope.
 - **Two ways to authenticate** — an `ff_` API key, or an interactive OAuth 2.1
   sign-in (PKCE) with a local loopback callback.
 - **Premium feature.** The public API is available on the Premium tier.
@@ -111,13 +115,23 @@ PKCE client). No scope is requested by default, which grants all read scopes and
 no writes; set `FF_SCOPES` to narrow that further. Refresh tokens are issued
 either way.
 
-To use the three write tools over OAuth, two things must both be true: request
-the write scopes — `goals:write` (covers `update_goal` and
-`record_goal_contribution`) and/or `budgets:write` (covers
-`switch_budget_method`) — via `FF_SCOPES`, e.g.
-`FF_SCOPES="goals:write budgets:write"` (a write scope implies its read scope),
-**and** enable **Allow changes** on the consent screen. Either one alone is not
-enough — writes stay off until you opt in on both.
+To use the write tools over OAuth, two things must both be true: request the
+write scopes via `FF_SCOPES` (a write scope implies its read scope), **and**
+enable **Allow changes** on the consent screen. Either one alone is not enough —
+writes stay off until you opt in on both.
+
+| Scope | Reaches |
+|---|---|
+| `transactions.annotate:write` | `annotate_transaction`, `categorize_transactions` |
+| `transactions:write` | those two **plus** `create_transaction`, `update_transaction`, `delete_transaction` |
+| `categories:write` | `create_category`, `update_category`, `delete_category` |
+| `goals:write` | `update_goal`, `record_goal_contribution` |
+| `budgets:write` | `switch_budget_method` |
+
+The two transaction scopes are deliberately different sizes: an assistant that
+only sorts your spending into categories can be given
+`transactions.annotate:write` and will never be able to change an amount or
+delete a row. Example: `FF_SCOPES="transactions.annotate:write categories:write"`.
 
 **Token cache location** (keyed per base URL, file `0600` / dir `0700`):
 
@@ -153,10 +167,19 @@ TLS verification.
   goals (with progress, history, and contributions), net worth and its history,
   holdings, liabilities, debt summary and payoff planning, and spending / income /
   cash-flow insights.
-- **Writes** are limited to three tools and each requires an idempotency key so a
-  retried call can't double-apply: update a goal's editable fields, record a goal
-  contribution, and switch your budgeting method. Switching a **shared** budget
-  needs partner approval in the app and cannot be completed here.
+- **Writes** are limited to eleven tools, each requiring an idempotency key so a
+  retried call can't double-apply: create, edit, delete, annotate, and bulk
+  categorize transactions; create, edit, and delete custom categories; update a
+  goal's editable fields; record a goal contribution; and switch your budgeting
+  method.
+- **What writes still cannot do.** Bank-synced transactions cannot be deleted —
+  the bank is the source of truth and the next sync would bring the row back.
+  System categories (the seeded defaults) cannot be changed or deleted. A
+  transaction's currency cannot be changed. No write ever creates a merchant
+  auto-categorization rule, so an assistant sorting your spending never teaches
+  the app new habits on your behalf, and no write replaces the slices of a split
+  transaction. Switching a **shared** budget needs partner approval in the app
+  and cannot be completed here.
 
 ## Privacy
 
@@ -177,8 +200,10 @@ npm run lint       # biome check
 ```
 
 The tool table (`src/tools/generated.ts`) is generated from `openapi.yaml`; a
-conformance test asserts the 32 tools match the spec and that the write set is
-exactly the three operations with an `Idempotency-Key`.
+conformance test asserts the 40 tools match the spec, that the write set is
+exactly the eleven operations with an `Idempotency-Key`, and that the destructive
+set is exactly `delete_transaction`, `delete_category`, and
+`switch_budget_method`.
 
 ## License
 
