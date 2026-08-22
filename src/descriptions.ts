@@ -10,15 +10,15 @@
 
 export const descriptions: Record<string, string> = {
   listAccounts:
-    "List the user's financial accounts (checking, savings, credit, loans, and more) with balances. Some accounts or fields may be hidden or omitted per the connection's privacy settings.",
+    "List the user's financial accounts (checking, savings, credit, loans, and more) with balances. Some accounts or fields may be hidden or omitted per the connection's privacy settings. Each account names its connection with connection_id, and names its own institution only when that differs from the connection's.",
   getAccount:
     "Get one account by id. Returns not-found if the account does not exist or is hidden by the connection's privacy settings.",
   getAccountBalances: "Get the current and available balances for one account by id.",
   listConnections:
-    "List the user's linked bank/institution connections and their sync status. Institution names may be redacted per the connection's privacy settings.",
+    "List the user's linked bank/institution connections and their sync status. Institution names may be redacted per the connection's privacy settings. Each connection also names the rail its data arrives on: provider, plus source_aggregator when that provider fronts another aggregator (Finicity or MX behind Quiltt, for example).",
   getSyncStatus: "Get a summary of the sync status across all of the user's linked connections.",
   listTransactions:
-    "List the user's transactions, optionally filtered by account, category, date range, pending state, or source. Merchant, description, and amount fields may be redacted, and transactions on excluded accounts or categories are omitted, per the connection's privacy settings.",
+    "List the user's transactions, optionally filtered by account, category, date range, pending state, or source. Merchant, description, and amount fields may be redacted, and transactions on excluded accounts or categories are omitted, per the connection's privacy settings. A transaction names only its account_id; to say which bank and which rail it came from, look up that account and then the account's connection.",
   getTransaction:
     "Get one transaction by id. Returns not-found if it does not exist or is hidden by the connection's privacy settings.",
   searchTransactions:

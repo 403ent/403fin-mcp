@@ -38,6 +38,32 @@ info:
     reconciled across users, and it is not a stable identifier. It is merchant
     identity for privacy purposes: a connection whose privacy settings redact
     `transaction.merchant` gets neither `merchant` nor `display_name`.
+
+
+    ## Where a transaction came from
+
+
+    Attribution is a two-hop join, and no single payload carries the whole
+    answer. A transaction carries `account_id`. An account carries
+    `connection_id`, and — only when its own bank differs from its connection's
+    — `institution_name` and `institution_logo_url`, because one connection can
+    span several banks. A connection carries `institution`, `provider` (the rail:
+    `plaid`, `quiltt`, `manual`) and, when that provider fronts another
+    aggregator, `source_aggregator` (`finicity`, `mx`, …; Quiltt is a unified
+    layer over several).
+
+
+    So: to name the bank behind a transaction, resolve the account, then take
+    `account.institution_name` if present and the account's connection's
+    `institution` otherwise. To name the pipe the data arrived through, read
+    `source_aggregator ?? provider` on that connection. Manual accounts have no
+    connection at all, and their `connection_id` is absent.
+
+
+    The institution fields on BOTH payloads are one privacy choice: a connection
+    whose settings redact `connection.institution` gets no institution name and
+    no logo anywhere — not on the connection, not on the account. `provider` and
+    `source_aggregator` are never redacted; they name the rail, not the bank.
 servers:
   - url: https://api.403fin.io
 security:
@@ -56,6 +82,10 @@ paths:
       tags: [accounts]
       operationId: listAccounts
       summary: List accounts
+      description: >-
+        Lists the caller's accounts. Each row carries connection_id, and carries
+        institution_name only when the account's own bank differs from its
+        connection's — see "Where a transaction came from" for the join.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
@@ -83,6 +113,10 @@ paths:
       tags: [accounts]
       operationId: getAccount
       summary: Get one account
+      description: >-
+        Returns one account, the middle hop of the attribution join: it resolves
+        a transaction's account_id to a connection_id, and to the account's own
+        institution when that differs from the connection's.
       parameters:
         - $ref: '#/components/parameters/PathID'
       responses:
@@ -121,6 +155,10 @@ paths:
       tags: [accounts]
       operationId: listConnections
       summary: List bank connections
+      description: >-
+        Lists the caller's linked connections — the last hop of the attribution
+        join. Each carries institution, provider (the rail) and, when that
+        provider fronts another aggregator, source_aggregator.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
@@ -160,6 +198,10 @@ paths:
       tags: [transactions]
       operationId: listTransactions
       summary: List transactions
+      description: >-
+        Lists the caller's transactions. A transaction names its account with
+        account_id and nothing more about where it came from; resolve the
+        account, then its connection, to name the bank and the rail.
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/PageSize'
@@ -996,6 +1038,18 @@ components:
         mask: { type: string, nullable: true }
         nickname: { type: string, nullable: true }
         provider: { type: string }
+        institution_name:
+          type: string
+          description: >-
+            The bank this ACCOUNT is at. Present only when it differs from its
+            connection's institution — one connection can span several banks —
+            so when it is absent the connection's institution is the account's.
+            Redacted together with the connection's, under connection.institution.
+        institution_logo_url:
+          type: string
+          description: >-
+            Logo for the account's own institution. Present under the same
+            condition as institution_name, and redacted with it.
         is_hidden: { type: boolean }
         created_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time, nullable: true }
@@ -1004,7 +1058,18 @@ components:
       required: [id]
       properties:
         id: { type: string, format: uuid }
-        provider: { type: string }
+        provider:
+          type: string
+          description: The rail this connection runs on — plaid, quiltt, or manual.
+        source_aggregator:
+          type: string
+          description: >-
+            The underlying data aggregator when the provider fronts one, as a
+            lowercase token (finicity, mx, plaid, akoya). Quiltt is a unified
+            layer over several aggregators, so this names the one that actually
+            sourced the connection's data; it is absent when the provider is
+            itself the aggregator. Never redacted — like provider, it names the
+            rail the data came over, not the institution it came from.
         institution: { type: string }
         institution_logo_url: { type: string }
         status: { type: string }

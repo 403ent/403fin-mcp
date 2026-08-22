@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed `openapi.yaml` for the API's transaction-attribution revision. The
+  drift is additive and response-side only, so the tool table is unchanged (32
+  tools, 3 writes): accounts gained `institution_name` and
+  `institution_logo_url`, populated only when an account's own bank differs from
+  its connection's; connections gained `source_aggregator`, naming the
+  aggregator a provider fronts (Finicity or MX behind Quiltt). A new "Where a
+  transaction came from" section documents the two-hop join — transaction to
+  account to connection — and records that both institution fields are hidden
+  together with the connection's under the `connection.institution` privacy
+  setting, while `provider` and `source_aggregator` are never redacted.
+- `list_accounts`, `list_connections`, and `list_transactions` descriptions now
+  tell the model how to follow that join, matching the gateway's own MCP surface
+  verbatim.
+
 ## [1.0.0] - 2026-08-21
 
 First public release — the official Model Context Protocol server for Forbidden
