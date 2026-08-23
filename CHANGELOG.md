@@ -5,7 +5,7 @@ All notable changes to `@403fin/mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-08-23
 
 ### Added
 
@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tell the model how to follow that join, matching the gateway's own MCP surface
   verbatim.
 
-## [1.0.0] - 2026-08-21
+### Initial build (2026-08-21, previously unreleased)
 
 First public release — the official Model Context Protocol server for Forbidden
 Finance, published to npm as `@403fin/mcp`. It is a thin stdio client over the
