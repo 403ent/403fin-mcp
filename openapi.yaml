@@ -1470,7 +1470,7 @@ components:
         category_id: { type: string, format: uuid, nullable: true }
         amount: { $ref: '#/components/schemas/Money' }
         merchant: { type: string }
-        display_name: { type: string, nullable: true, description: The requesting user's own label for this merchant; per-viewer, absent when they have no rule for it. See "Names on a transaction". }
+        display_name: { type: string, nullable: true, description: "The requesting user's own label for this merchant; per-viewer, absent when they have no rule for it. See \"Names on a transaction\"." }
         description: { type: string }
         date: { type: string, format: date }
         posted_at: { type: string, format: date-time, nullable: true }
@@ -1628,7 +1628,7 @@ components:
         spent_percentage: { type: number, format: double }
         rollover_amount: { type: string, description: A decimal amount string. }
         upcoming_recurring_total: { type: string, description: A decimal amount string. }
-        phase_active: { type: boolean, description: False when the group is anchored to a different cycle phase than the period served — it received no fresh allocation, but its spend still counts. }
+        phase_active: { type: boolean, description: "False when the group is anchored to a different cycle phase than the period served — it received no fresh allocation, but its spend still counts." }
     BudgetProgress:
       type: object
       required: [budget_id]
@@ -1658,7 +1658,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         merchant: { type: string }
-        display_name: { type: string, nullable: true, description: The requesting user's own label for this stream's merchant; per-viewer, absent when they have no rule for it. See "Names on a transaction". }
+        display_name: { type: string, nullable: true, description: "The requesting user's own label for this stream's merchant; per-viewer, absent when they have no rule for it. See \"Names on a transaction\"." }
         expected_amount: { type: string, description: A decimal amount string. }
         currency: { type: string }
         frequency: { type: string }
@@ -1680,7 +1680,7 @@ components:
       properties:
         rule_id: { type: string, format: uuid }
         merchant: { type: string }
-        display_name: { type: string, nullable: true, description: The requesting user's own label for this bill's merchant; per-viewer, absent when they have no rule for it. See "Names on a transaction". }
+        display_name: { type: string, nullable: true, description: "The requesting user's own label for this bill's merchant; per-viewer, absent when they have no rule for it. See \"Names on a transaction\"." }
         expected_amount: { type: string, description: A decimal amount string. }
         expected_date: { type: string, format: date }
         frequency: { type: string }
