@@ -50,4 +50,14 @@ jobs:
             exit 1
           fi
 
-      - run: npm publish --provenance --access public
+      # Idempotent: a re-run of a tag whose version is already on the registry
+      # (or a tag pushed after a manual bootstrap publish, as 1.0.0 was) is a
+      # green no-op, not a duplicate-publish failure.
+      - name: Publish (skipped when the version already exists)
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          if npm view "@403fin/mcp@$PKG" version >/dev/null 2>&1; then
+            echo "@403fin/mcp@$PKG already on the registry — nothing to publish."
+            exit 0
+          fi
+          npm publish --provenance --access public
