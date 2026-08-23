@@ -1490,6 +1490,42 @@ components:
             - $ref: '#/components/schemas/TransactionLocation'
           nullable: true
           description: Where the purchase happened. Redacted as ONE unit under transaction.location.
+        provider_amount:
+          allOf:
+            - $ref: '#/components/schemas/Money'
+          nullable: true
+          description: >-
+            What the bank recorded as the amount before a user edit displaced
+            it. Present only on an edited bank-synced row; revert_to_provider
+            ["amount"] restores it. Redacted together with amount under
+            transaction.amount.
+        provider_merchant_name:
+          type: string
+          nullable: true
+          description: >-
+            What the bank recorded as the merchant before a user edit displaced
+            it. Present-and-empty means the bank recorded nothing and reverting
+            clears the field. Redacted with merchant under transaction.merchant.
+        provider_transaction_date:
+          type: string
+          format: date
+          nullable: true
+          description: >-
+            The transaction date the bank recorded (YYYY-MM-DD) before a user
+            edit moved it. Unredacted, like date itself.
+        provider_description:
+          type: string
+          nullable: true
+          description: >-
+            The displayed description at the moment of the row's first user
+            edit. Redacted with description under transaction.description.
+        provider_memo:
+          type: string
+          nullable: true
+          description: >-
+            What the bank recorded as the memo before a user edit displaced it.
+            Present-and-empty means the bank recorded nothing and reverting
+            clears the field. Redacted with memo under transaction.memo.
         version:
           type: integer
           format: int32
