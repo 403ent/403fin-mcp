@@ -1,0 +1,53 @@
+name: Release
+
+# Publishes @403fin/mcp to npm via TRUSTED PUBLISHING (OIDC): no npm token
+# exists anywhere — npmjs.com is configured to trust THIS repo + THIS workflow
+# file, and the job exchanges its GitHub OIDC identity for a short-lived
+# publish credential at run time. --provenance attaches the build attestation
+# so consumers can verify the tarball came from this repo at this commit.
+#
+# Trigger: pushing a v* tag (e.g. v1.0.0). The tag is the release intent;
+# package.json's version must match it or the publish fails loudly.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # the OIDC exchange — without it trusted publishing cannot mint
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # npm ≥11.5 is required for OIDC trusted publishing from CI.
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm run lint
+
+      - run: npm test
+
+      - name: Tag ↔ package.json version guard
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag v$TAG does not match package.json version $PKG" >&2
+            exit 1
+          fi
+
+      - run: npm publish --provenance --access public
